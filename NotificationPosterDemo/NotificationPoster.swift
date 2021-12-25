@@ -8,6 +8,7 @@
 import Combine
 import Foundation
 #if DEBUG
+import UIKit
 import os.signpost
 #endif
 
@@ -22,50 +23,71 @@ class NotificationPoster {
      */
     static let shared = NotificationPoster()
     
-    // FIXME: find a cleaner way to monitor contents of the array to broadcast when done
-    @Published var arrayIsEmpty: Bool?
-    
-    /// Initializer is private because this is a singleton class.
-    private init() {}
-    
     /// Timer that is alive so long as there are elements in the `notifications` array.
     private var cancellable: AnyCancellable?
     
     // This is for the timer
     private var subscriptions: Set<AnyCancellable> = []
     
-    @Published private(set) var notifications: [MockNotification] = [] {
-        willSet {
-            // if the array is empty and about to receive a value
-            if notifications.isEmpty && newValue.count == 1 {
-                startNotificationTimer()
-            }
-        }
+    @Published private(set) var notifications: [MockNotification] = []
+    @Published private(set) var isEmpty: Bool = true
         
-        didSet {
-            if notifications.isEmpty {
-                cancellable = nil
-            }
-        }
+    /// Initializer is private because this is a singleton class.
+    private init() {
+        configurePublisher()
     }
-    
+        
     public func post(notification: MockNotification) {
         notifications.append(notification)
     }
     
+    
+    /**
+        `configurePublisher()` configures the `notifications` publisher.
+     
+     `NotificationPoster` is initialized as a singleton.
+     - Upon initialization, the queue is empty
+     - When a notification is `post(notification:)` is called, the notification is appended to a queue, NOT posted.
+     
+     The `notifications` array is a `Publisher` and when it's updated, the number of elements in the queue is observed by this method.
+    
+     If the queue has one element, a timer is activated to post the notifications every 0.05 seconds. The timer will remain active until the elements in the queue are cleared, at which point the timer will nilled out.
+     */
+    private func configurePublisher() {
+        $notifications
+            .sink { notifications in
+                switch notifications.count {
+                case 0:
+                    // cancel timer
+                    self.cancellable = nil
+                    self.isEmpty = true
+                case 1:
+                    // start timer
+                    self.cancellable = Timer.publish(every: 0.05,
+                                                tolerance: 0.05,
+                                                on: .main,
+                                                in: .common)
+                        .autoconnect()
+                        .sink(receiveValue: { _ in
+                            self.startNotificationTimer()
+                        })
+                    
+                    self.isEmpty = false
+                default:
+                    // do nothing, as the timer is already firing
+                    break
+                }
+            }
+            .store(in: &subscriptions)
+    }
+    
     private func startNotificationTimer() {
-        cancellable = Timer.publish(every: 0.1,
-                                    tolerance: 0.1,
-                                    on: .main,
-                                    in: .common)
-            .autoconnect()
-            .sink(receiveValue: { object in
-                let log = OSLog(subsystem: "NotificationPoster",
-                                   category: "startNotificationTimer()")
-                os_signpost(.begin, log: log, name: "post(notification:)")
-                self.post(notification: self.notifications.removeFirst())
-                os_signpost(.end, log: log, name: "post(notification:)")
-            })
-        
+        let log = OSLog(subsystem: "NotificationPoster",
+                        category: "startNotificationTimer()")
+        os_signpost(.begin, log: log, name: "post(notification:)")
+        let mockNotification = notifications.removeFirst()
+        let realNotification = Notification(name: UIApplication.userDidTakeScreenshotNotification)
+        NotificationCenter.default.post(realNotification)
+        os_signpost(.end, log: log, name: "post(notification:)")
     }
 }

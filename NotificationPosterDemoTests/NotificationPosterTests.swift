@@ -7,6 +7,7 @@
 
 @testable import NotificationPosterDemo
 import Combine
+import os.signpost
 import XCTest
 
 class NotificationPosterTests: XCTestCase {
@@ -17,22 +18,54 @@ class NotificationPosterTests: XCTestCase {
         }
     }()
     
+    class MockSubscriber {
+        var counter: Int = 0
+        
+        init() {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleNotification(_:)),
+                name: UIApplication.userDidTakeScreenshotNotification,
+                object: nil
+            )
+        }
+        
+        @objc func handleNotification(_ notification: Notification) {
+            let log = OSLog(subsystem: "NotificationSubscriber",
+                            category: "handleNotification")
+            os_signpost(.begin, log: log, name: "Notification Received")
+            counter += 1
+            os_signpost(.end, log: log, name: "Notification Received")
+
+        }
+    }
+        
     func testDemo() {
-//        let exp = expectation(description: #function)
+        let exp = expectation(description: #function)
         let sut = NotificationPoster.shared
         
-//        sut.$arrayIsEmpty
-//            .collect(2)
-//            .sink { collectedValues in
-//                print(collectedValues)
-//                exp.fulfill()
-//            }
-//            .store(in: &subscriptions)
-//        
-//        mockNotifications.forEach { mock in
-//            sut.post(notification: mock)
-//        }
+        let mockSubscriber = MockSubscriber()
+        XCTAssertEqual(mockSubscriber.counter, 0)
         
-        waitForExpectations(timeout: 2)
+        let expectedValues = [true, false, false, true]
+        
+        sut.$isEmpty
+            .collect(4)
+            .print("sut.$notifications")
+            .sink { receivedValues in
+                XCTAssertEqual(receivedValues, expectedValues)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    XCTAssertEqual(mockSubscriber.counter, 10)
+                    exp.fulfill()
+                }
+            }
+            .store(in: &subscriptions)
+        
+
+        mockNotifications.forEach { mock in
+            sut.post(notification: mock)
+        }
+
+        waitForExpectations(timeout: 5)
     }
 }
