@@ -10,6 +10,28 @@ import Combine
 import os.signpost
 import XCTest
 
+class MockSubscriber {
+    @Published var counter: Int = 0
+    
+    private var subscriptions: Set<AnyCancellable> = []
+    
+    init() {
+        NotificationCenter.default
+            .publisher(
+                for: UIApplication.userDidTakeScreenshotNotification,
+                   object: nil
+            )
+            .sink { _ in
+                let log = OSLog(subsystem: "NotificationSubscriber",
+                                category: "handleNotification")
+                os_signpost(.begin, log: log, name: "Notification Received")
+                self.counter += 1
+                os_signpost(.end, log: log, name: "Notification Received")
+            }
+            .store(in: &subscriptions)
+    }    
+}
+
 class NotificationPosterTests: XCTestCase {
     var subscriptions: Set<AnyCancellable> = []
     private lazy var mockNotifications: [MockNotification] = {
@@ -17,51 +39,34 @@ class NotificationPosterTests: XCTestCase {
             MockNotification(objectValue: element)
         }
     }()
-    
-    class MockSubscriber {
-        var counter: Int = 0
-        
-        init() {
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(handleNotification(_:)),
-                name: UIApplication.userDidTakeScreenshotNotification,
-                object: nil
-            )
-        }
-        
-        @objc func handleNotification(_ notification: Notification) {
-            let log = OSLog(subsystem: "NotificationSubscriber",
-                            category: "handleNotification")
-            os_signpost(.begin, log: log, name: "Notification Received")
-            counter += 1
-            os_signpost(.end, log: log, name: "Notification Received")
-
-        }
-    }
-        
+            
     func testDemo() {
-        let exp = expectation(description: #function)
+        let isEmptyExp = expectation(description: "isEmpty")
         let sut = NotificationPoster.shared
         
+        let counterExp = expectation(description: "counter")
         let mockSubscriber = MockSubscriber()
         XCTAssertEqual(mockSubscriber.counter, 0)
         
-        let expectedValues = [true, false, false, true]
+        let expectedIsEmptyValues = [true, false, false, true]
         
         sut.$isEmpty
             .collect(4)
             .print("sut.$notifications")
-            .sink { receivedValues in
-                XCTAssertEqual(receivedValues, expectedValues)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    XCTAssertEqual(mockSubscriber.counter, 10)
-                    exp.fulfill()
-                }
+            .sink { receivedIsEmptyValues in
+                XCTAssertEqual(receivedIsEmptyValues, expectedIsEmptyValues)
+                isEmptyExp.fulfill()
             }
             .store(in: &subscriptions)
         
-
+        mockSubscriber.$counter
+            .collect(11)
+            .sink { receivedCounts in
+                XCTAssertEqual(receivedCounts, Array(0...10))
+                counterExp.fulfill()
+            }
+            .store(in: &subscriptions)
+        
         mockNotifications.forEach { mock in
             sut.post(notification: mock)
         }
