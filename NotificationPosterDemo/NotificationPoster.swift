@@ -23,22 +23,24 @@ class NotificationPoster {
      */
     static let shared = NotificationPoster()
     
+    @Published private(set) var notificationQueue: [MockNotification] = []
+    @Published private(set) var isEmpty: Bool = true
+    
     /// Timer that is alive so long as there are elements in the `notifications` array.
     private var cancellable: AnyCancellable?
     
     // This is for the timer
     private var subscriptions: Set<AnyCancellable> = []
     
-    @Published private(set) var notifications: [MockNotification] = []
-    @Published private(set) var isEmpty: Bool = true
-        
+    let delayInterval: TimeInterval = 0.05
+            
     /// Initializer is private because this is a singleton class.
     private init() {
         configurePublisher()
     }
         
     public func post(notification: MockNotification) {
-        notifications.append(notification)
+        notificationQueue.append(notification)
     }
     
     
@@ -54,7 +56,7 @@ class NotificationPoster {
      If the queue has one element, a timer is activated to post the notifications every 0.05 seconds. The timer will remain active until the elements in the queue are cleared, at which point the timer will nilled out.
      */
     private func configurePublisher() {
-        $notifications
+        $notificationQueue
             .sink { notifications in
                 switch notifications.count {
                 case 0:
@@ -63,10 +65,10 @@ class NotificationPoster {
                     self.isEmpty = true
                 case 1:
                     // start timer
-                    self.cancellable = Timer.publish(every: 0.05,
-                                                tolerance: 0.05,
-                                                on: .main,
-                                                in: .common)
+                    self.cancellable = Timer.publish(every: self.delayInterval,
+                                                     tolerance: self.delayInterval * 0.5,
+                                                     on: .main,
+                                                     in: .common)
                         .autoconnect()
                         .sink(receiveValue: { _ in
                             self.startNotificationTimer()
@@ -85,9 +87,11 @@ class NotificationPoster {
         let log = OSLog(subsystem: "NotificationPoster",
                         category: "startNotificationTimer()")
         os_signpost(.begin, log: log, name: "post(notification:)")
-        let mockNotification = notifications.removeFirst()
+        let mockNotification = notificationQueue.removeFirst()
         let realNotification = Notification(name: UIApplication.userDidTakeScreenshotNotification)
-        NotificationCenter.default.post(realNotification)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(realNotification)
+        }
         os_signpost(.end, log: log, name: "post(notification:)")
     }
 }

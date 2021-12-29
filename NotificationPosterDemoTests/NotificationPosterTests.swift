@@ -29,13 +29,13 @@ class MockSubscriber {
                 os_signpost(.end, log: log, name: "Notification Received")
             }
             .store(in: &subscriptions)
-    }    
+    }
 }
 
 class NotificationPosterTests: XCTestCase {
     var subscriptions: Set<AnyCancellable> = []
     private lazy var mockNotifications: [MockNotification] = {
-        Array(1...10).map { element in
+        Array(1...30).map { element in
             MockNotification(objectValue: element)
         }
     }()
@@ -60,9 +60,9 @@ class NotificationPosterTests: XCTestCase {
             .store(in: &subscriptions)
         
         mockSubscriber.$counter
-            .collect(11)
+            .collect(31)
             .sink { receivedCounts in
-                XCTAssertEqual(receivedCounts, Array(0...10))
+                XCTAssertEqual(receivedCounts, Array(0...30))
                 counterExp.fulfill()
             }
             .store(in: &subscriptions)
@@ -71,6 +71,9 @@ class NotificationPosterTests: XCTestCase {
             sut.post(notification: mock)
         }
 
-        waitForExpectations(timeout: 5)
+        waitForExpectations(timeout: 10)
+    }
+    
+    func testMeasureInstance() {
     }
 }
